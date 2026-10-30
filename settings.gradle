@@ -1,0 +1,3 @@
+rootProject.name = 'fantastic-mock-plugins'
+
+include 'http-netty', 'websocket-jakarta', 'grpc', 'fix-quickfixj'

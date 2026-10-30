@@ -1,0 +1,48 @@
+apiVersion: 5
+provider: com.fantasticmock.example.websocket.JakartaWebSocketProtocolPlugin
+
+descriptor:
+  id: websocket-jakarta
+  displayName: WebSocket (Jakarta)
+  version: 1.1.0
+  capabilities: [CONNECTION_ORIENTED]
+
+runtime:
+  endpoint:
+    path: /events
+  settings:
+    endpoint-path: { type: string, pattern: "^/.*" }
+
+message:
+  request:
+    fields:
+      path: string
+      url: string
+      query: query-string
+      body:
+        type: text
+        raw: true
+        decoders: [json, xml]
+      messageType: string
+
+template:
+  response:
+    fields:
+      body:
+        label: Body
+        type: text
+        description: WebSocket text response template
+  callback:
+    fields:
+      url:
+        label: Target URL
+        type: string
+        description: Remote ws:// or wss:// endpoint opened for this callback
+      headers:
+        label: Handshake headers
+        type: map
+        description: Optional HTTP headers sent during the opening handshake
+      body:
+        label: Body
+        type: text
+        description: WebSocket text callback template

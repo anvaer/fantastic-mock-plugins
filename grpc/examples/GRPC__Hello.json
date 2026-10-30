@@ -1,0 +1,30 @@
+{
+  "settings": {
+    "id": "grpc-hello",
+    "fileName": "GRPC__Hello.json",
+    "transport": "grpc",
+    "endpoint": "grpc-demo",
+    "enabled": true,
+    "loggingEnabled": true
+  },
+  "request": {
+    "matchers": [
+      { "location": "request.method", "regex": "\\A\\Qdemo.Greeter/SayHello\\E\\z" }
+    ]
+  },
+  "requestSample": {
+    "service": "demo.Greeter",
+    "method": "demo.Greeter/SayHello",
+    "body": "{\"name\":\"Ada\"}"
+  },
+  "response": {
+    "status": "OK",
+    "headers": { "x-mock": "fantasticmock" },
+    "body": { "message": "Hello {{name}}" },
+    "delayMs": 25
+  },
+  "variables": [
+    { "name": "name", "source": "request.body.name" }
+  ],
+  "callbacks": []
+}

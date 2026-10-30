@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>FantasticMock Jakarta WebSocket plugin example</title>
+  </head>
+  <body>
+    <button id="connect">Connect and send</button>
+    <pre id="output">Idle</pre>
+    <script>
+      document.querySelector("#connect").addEventListener("click", () => {
+        const output = document.querySelector("#output");
+        const socket = new WebSocket("ws://localhost:8080/events?tenant=demo");
+
+        socket.addEventListener("open", () => {
+          output.textContent = "Connected; sending order.created";
+          socket.send(
+            JSON.stringify({ type: "order.created", orderId: "ORD-42" }),
+          );
+        });
+        const messages = [];
+        socket.addEventListener("message", (event) => {
+          messages.push(event.data);
+          output.textContent = "Received:\n" + messages.join("\n");
+        });
+        socket.addEventListener("close", (event) => {
+          output.textContent += "\nClosed: " + event.code + " " + event.reason;
+        });
+        socket.addEventListener("error", () => {
+          output.textContent = "WebSocket connection failed";
+        });
+      });
+    </script>
+  </body>
+</html>

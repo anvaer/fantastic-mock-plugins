@@ -1,0 +1,53 @@
+apiVersion: 5
+provider: com.fantasticmock.example.grpc.GrpcProtocolPlugin
+descriptor:
+  id: grpc
+  displayName: gRPC (unary and server streaming)
+  version: 1.5.0
+  capabilities: [CONNECTION_ORIENTED]
+runtime:
+  settings:
+    host: { type: string, default: "127.0.0.1" }
+    port: { type: integer, default: 9091, min: 0, max: 65535 }
+    descriptor-file: { type: string, default: "protocol-plugins/grpc/examples/hello.protoset" }
+    max-in-flight: { type: integer, default: 1024, min: 1, max: 1000000 }
+    max-message-bytes: { type: integer, default: 4194304, min: 1, max: 1073741824 }
+message:
+  request:
+    fields:
+      # Most selective routing field first: it selects the route-index bucket.
+      method: { type: string, routing: true }
+      service: { type: string, routing: true }
+      header: map
+      body: { type: json, raw: true }
+# A unary method answers with the first response; a server-streaming method sends each response
+# as one message (repeat and until included) and ends with OK after the last.
+template:
+  response:
+    fields:
+      status:
+        label: gRPC status
+        type: string
+        options: [OK, CANCELLED, UNKNOWN, INVALID_ARGUMENT, DEADLINE_EXCEEDED, NOT_FOUND, ALREADY_EXISTS, PERMISSION_DENIED, RESOURCE_EXHAUSTED, FAILED_PRECONDITION, ABORTED, OUT_OF_RANGE, UNIMPLEMENTED, INTERNAL, UNAVAILABLE, DATA_LOSS, UNAUTHENTICATED]
+      description: { label: Error description, type: string }
+      headers: { label: Metadata, type: map }
+      trailers: { label: Trailing metadata, type: map }
+      body: { label: Protobuf JSON body, type: json }
+  callback:
+    fields:
+      url:
+        label: Target URL
+        type: string
+        required: true
+        description: Remote grpc://host:port or grpcs://host:port (TLS) endpoint
+      method:
+        label: Full method name
+        type: string
+        required: true
+        description: Fully qualified service/method from the instance descriptor set
+      headers: { label: Metadata, type: map }
+      body: { label: Protobuf JSON body, type: json }
+      timeoutMs:
+        label: RPC timeout (ms)
+        type: integer
+        description: Positive deadline including connection setup; defaults to 5000 ms

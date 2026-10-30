@@ -1,0 +1,11 @@
+fantasticmock:
+  protocols:
+    instances:
+      ws-jakarta-demo:
+        protocol: websocket-jakarta
+        enabled: true
+      ws-jakarta-callback-receiver:
+        protocol: websocket-jakarta
+        enabled: true
+        settings:
+          endpoint-path: /callbacks

@@ -1,0 +1,4 @@
+// Netty is bundled with the plugin: Fantastic Mock does not provide it.
+dependencies {
+    implementation 'io.netty:netty-codec-http:4.2.12.Final'
+}

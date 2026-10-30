@@ -1,0 +1,74 @@
+apiVersion: 5
+provider: com.fantasticmock.example.fixquickfixj.QuickFixProtocolPlugin
+
+descriptor:
+  id: fix-quickfixj
+  displayName: FIX 4.2 / 4.4 (QuickFIX/J)
+  version: 1.4.0
+  capabilities: [CONNECTION_ORIENTED]
+
+runtime:
+  settings:
+    host: { type: string, default: "127.0.0.1" }
+    port: { type: integer, default: 9886, min: 0, max: 65535 }
+    # The one version this instance speaks. Run an instance per version to serve both.
+    begin-string: { type: string, default: "FIX.4.2", options: ["FIX.4.2", "FIX.4.4"] }
+    # The mock's own CompID. Empty accepts any TargetCompID (56) and answers as that CompID.
+    sender-comp-id: { type: string }
+    max-in-flight: { type: integer, default: 1024, min: 1, max: 1000000 }
+    # Answer an application message that matches no template with BusinessMessageReject (35=j).
+    reject-unmatched: { type: boolean, default: true }
+    # Send a TestRequest to a silent client and disconnect it when that goes unanswered.
+    disconnect-idle: { type: boolean, default: true }
+    # Keep every sent application message for ResendRequest. Off, a resend is answered with a
+    # gap fill and memory stays flat however long a busy session runs.
+    persist-messages: { type: boolean, default: true }
+    # Validate incoming messages against the data dictionary and reject the invalid ones.
+    validate: { type: boolean, default: false }
+    # A QuickFIX/J data dictionary file with your own fields and groups. Empty uses the
+    # standard dictionary of the version.
+    data-dictionary: { type: string }
+
+message:
+  request:
+    fields:
+      # The routing field selects the route-index bucket.
+      msgType: { type: string, routing: true, label: "MsgType (35)" }
+      senderCompId: { type: string, label: "SenderCompID (49)" }
+      targetCompId: { type: string, label: "TargetCompID (56)" }
+      # request.tag.<number>; the first occurrence of a repeated tag.
+      tag: { type: map, label: Tags }
+      # The whole message in wire order, with | in place of SOH. MsgType, the CompIDs and Tags are
+      # read from it: in an Example request they change it, and it changes them.
+      body: { type: text, raw: true, label: Raw message }
+
+template:
+  response:
+    fields:
+      msgType:
+        label: "MsgType (35)"
+        description: "For example 8 ExecutionReport, 9 OrderCancelReject, j BusinessMessageReject, 3 Reject"
+      tags:
+        label: Tags
+        type: map
+        description: Tag number to value; a tag with an empty value is left out
+      body:
+        label: Raw fields
+        type: text
+        description: "tag=value pairs separated by | or line breaks; use it for repeating groups"
+  # Unsolicited messages to logged-on sessions.
+  callback:
+    fields:
+      targetCompId:
+        label: Target CompID
+        description: CompID of the client that receives the message; empty sends it to every logged-on session
+      msgType:
+        label: "MsgType (35)"
+      tags:
+        label: Tags
+        type: map
+        description: Tag number to value; a tag with an empty value is left out
+      body:
+        label: Raw fields
+        type: text
+        description: "tag=value pairs separated by | or line breaks; use it for repeating groups"

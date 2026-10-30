@@ -1,0 +1,11 @@
+fantasticmock:
+  protocols:
+    external-enabled: true
+    instances:
+      grpc-demo:
+        protocol: grpc
+        enabled: true
+        settings:
+          host: 127.0.0.1
+          port: 9091
+          descriptor-file: protocol-plugins/grpc/examples/hello.protoset

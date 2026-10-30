@@ -1,0 +1,108 @@
+{
+  "settings": {
+    "id": "FIXQFJ42__NewOrderSingle",
+    "fileName": "FIXQFJ42__NewOrderSingle.json",
+    "enabled": true,
+    "loggingEnabled": true,
+    "transport": "fix-quickfixj",
+    "endpoint": "fixqfj42-demo",
+    "tags": ["example", "fix-quickfixj", "fix-4.2"]
+  },
+  "request": {
+    "msgType": "D",
+    "matchers": [
+      {
+        "location": "request.tag.40",
+        "regex": "^2$"
+      }
+    ]
+  },
+  "requestSample": {
+    "msgType": "D",
+    "senderCompId": "CLIENT1",
+    "targetCompId": "FMOCK",
+    "tag": {
+      "8": "FIX.4.2",
+      "9": "129",
+      "35": "D",
+      "49": "CLIENT1",
+      "56": "FMOCK",
+      "34": "2",
+      "52": "20261006-09:30:00.000",
+      "11": "ORD-42",
+      "21": "1",
+      "55": "IBM",
+      "54": "1",
+      "60": "20261006-09:30:00.000",
+      "38": "100",
+      "40": "2",
+      "44": "125.50",
+      "10": "073"
+    },
+    "body": "8=FIX.4.2|9=129|35=D|49=CLIENT1|56=FMOCK|34=2|52=20261006-09:30:00.000|11=ORD-42|21=1|55=IBM|54=1|60=20261006-09:30:00.000|38=100|40=2|44=125.50|10=073|"
+  },
+  "response": [
+    {
+      "msgType": "8",
+      "tags": {
+        "37": "MOCK-{{clOrdId}}",
+        "11": "{{clOrdId}}",
+        "17": "MOCK-{{clOrdId}}-1",
+        "20": "0",
+        "150": "0",
+        "39": "0",
+        "55": "{{symbol}}",
+        "54": "{{side}}",
+        "38": "{{qty}}",
+        "44": "{{price}}",
+        "151": "{{qty}}",
+        "14": "0",
+        "6": "0"
+      }
+    },
+    {
+      "msgType": "8",
+      "tags": {
+        "37": "MOCK-{{clOrdId}}",
+        "11": "{{clOrdId}}",
+        "17": "MOCK-{{clOrdId}}-2",
+        "20": "0",
+        "150": "2",
+        "39": "2",
+        "55": "{{symbol}}",
+        "54": "{{side}}",
+        "38": "{{qty}}",
+        "44": "{{price}}",
+        "32": "{{qty}}",
+        "31": "{{price}}",
+        "151": "0",
+        "14": "{{qty}}",
+        "6": "{{price}}"
+      },
+      "delayMs": 500
+    }
+  ],
+  "variables": [
+    {
+      "name": "clOrdId",
+      "source": "request.tag.11"
+    },
+    {
+      "name": "symbol",
+      "source": "request.tag.55"
+    },
+    {
+      "name": "side",
+      "source": "request.tag.54"
+    },
+    {
+      "name": "qty",
+      "source": "request.tag.38"
+    },
+    {
+      "name": "price",
+      "source": "request.tag.44"
+    }
+  ],
+  "callbacks": []
+}

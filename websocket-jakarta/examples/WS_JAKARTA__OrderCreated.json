@@ -1,0 +1,66 @@
+{
+  "settings": {
+    "id": "WS_JAKARTA__OrderCreated",
+    "fileName": "WS_JAKARTA__OrderCreated.json",
+    "enabled": true,
+    "loggingEnabled": true,
+    "transport": "websocket-jakarta",
+    "endpoint": "ws-jakarta-demo",
+    "tags": ["example", "websocket", "jakarta"]
+  },
+  "request": {
+    "matchers": [
+      {
+        "location": "request.path",
+        "regex": "^/events$"
+      },
+      {
+        "location": "request.body.type",
+        "regex": "^order\\.created$"
+      }
+    ]
+  },
+  "requestSample": {
+    "path": "/events",
+    "query": "tenant=demo",
+    "body": "{\"type\":\"order.created\",\"orderId\":\"ORD-42\"}"
+  },
+  "responses": [
+    {
+      "body": "{\"type\":\"order.accepted\",\"orderId\":\"{{orderId}}\",\"tenant\":\"{{tenant}}\"}"
+    },
+    {
+      "body": "{\"type\":\"order.ready\",\"orderId\":\"{{orderId}}\"}",
+      "delayMs": 25
+    }
+  ],
+  "variables": [
+    {
+      "name": "orderId",
+      "source": "request.body.orderId"
+    },
+    {
+      "name": "tenant",
+      "source": "request.query.tenant"
+    },
+    {
+      "name": "callbackBase",
+      "source": "request.url",
+      "regex": "^(ws://[^/]+)",
+      "group": 1
+    }
+  ],
+  "callbacks": [
+    {
+      "enabled": true,
+      "async": true,
+      "transport": "websocket-jakarta",
+      "url": "{{callbackBase}}/callbacks",
+      "headers": {
+        "X-FantasticMock-Callback": "order-audit"
+      },
+      "body": "{\"type\":\"order.audit\",\"orderId\":\"{{orderId}}\"}",
+      "delayMs": 50
+    }
+  ]
+}

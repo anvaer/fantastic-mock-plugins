@@ -1,0 +1,65 @@
+apiVersion: 5
+provider: com.fantasticmock.example.http.netty.NettyHttpProtocolPlugin
+
+descriptor:
+  id: http-netty
+  displayName: HTTP (Netty)
+  version: 1.2.0
+  capabilities: [CONNECTION_ORIENTED]
+
+runtime:
+  endpoint:
+    path: /
+  # Shared by both exchange modes.
+  settings:
+    exchange-mode: { type: string, default: http, options: [http, protocol] }
+    host: { type: string, default: "127.0.0.1" }
+    port: { type: integer, default: 9083, min: 0, max: 65535 }
+    worker-threads: { type: integer, default: 1, min: 0, max: 1024 }
+    max-in-flight: { type: integer, default: 1024, min: 1, max: 1000000 }
+    max-content-length: { type: integer, default: 16777216, min: 1, max: 2147483646 }
+    max-initial-line-length: { type: integer, default: 8192, min: 256, max: 1048576 }
+    max-header-size: { type: integer, default: 16384, min: 256, max: 16777216 }
+    max-chunk-size: { type: integer, default: 8192, min: 256, max: 16777216 }
+    idle-timeout-ms: { type: integer, default: 30000, min: 0, max: 2147483647 }
+    compression-enabled: { type: boolean, default: false }
+
+# Used by exchange-mode: protocol, with the same template format as built-in http.
+routing:
+  fields: [request.method]
+  constraints:
+    - { source: request.method, template: method, type: exact, ignoreCase: true, wildcards: [ANY, "*"] }
+    - { source: request.path, template: pathRegex, type: regex }
+
+message:
+  request:
+    fields:
+      method:
+        label: HTTP Method
+        type: string
+        routing: true
+        options: [ANY, GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
+      path: string
+      url: string
+      query: query-string
+      header:
+        from: headers
+        type: map
+      body:
+        type: text
+        raw: true
+        decoders: [json, xml]
+
+template:
+  response:
+    single: true
+    fields:
+      status:
+        label: Status
+        type: integer
+      headers:
+        label: Headers
+        type: map
+      body:
+        label: Body
+        type: text

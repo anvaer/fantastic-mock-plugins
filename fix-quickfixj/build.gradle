@@ -1,0 +1,8 @@
+// QuickFIX/J and Apache MINA are bundled with the plugin. The FIX 4.2 and 4.4 message jars are
+// used for their data dictionaries, FIX42.xml and FIX44.xml.
+def quickfixjVersion = '3.0.2'
+dependencies {
+    implementation "org.quickfixj:quickfixj-core:${quickfixjVersion}"
+    runtimeOnly "org.quickfixj:quickfixj-messages-fix42:${quickfixjVersion}"
+    runtimeOnly "org.quickfixj:quickfixj-messages-fix44:${quickfixjVersion}"
+}

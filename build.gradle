@@ -1,0 +1,107 @@
+// Builds the protocol plugins against the Fantastic Mock protocol API.
+//
+//   gradlew build            compile and test every plugin
+//   gradlew packagePlugins   one ready-to-install folder per plugin in build/plugins/<id>/
+//                            and one zip per plugin in build/distributions/
+//   gradlew prepareLibs      download each plugin's libraries into <id>/lib/, for running
+//                            a plugin from source (Fantastic Mock compiles it at startup)
+//
+// The API jar is downloaded once from fantasticmock.com and checked against its SHA-256.
+// -PhostApi=<path> builds against a local copy instead.
+
+def apiVersion = '1.0.5'
+def apiSha256 = '553500261e447edc412bbd3af7c584637dd6a10852e0a1e9db43c38e12e5ccb8'
+def apiUrls = [
+    "https://cdn.fantasticmock.com/downloads/fantasticmock-${apiVersion}-protocol-api.jar",
+    "https://fantasticmock.com/dl/fantasticmock-${apiVersion}-protocol-api.jar",
+]
+def localApi = providers.gradleProperty('hostApi')
+def downloadedApi = layout.buildDirectory.file("protocol-api/fantasticmock-${apiVersion}-protocol-api.jar")
+
+def downloadProtocolApi = tasks.register('downloadProtocolApi') {
+    description = 'Downloads the Fantastic Mock protocol API jar the plugins compile against.'
+    def target = downloadedApi.get().asFile
+    outputs.file(target)
+    onlyIf { !localApi.isPresent() && !target.exists() }
+    doLast {
+        target.parentFile.mkdirs()
+        def partial = new File(target.path + '.part')
+        def failures = []
+        for (url in apiUrls) {
+            try {
+                def connection = new URL(url).openConnection()
+                connection.connectTimeout = 15000
+                connection.readTimeout = 60000
+                connection.inputStream.withStream { input -> partial.withOutputStream { it << input } }
+                def digest = java.security.MessageDigest.getInstance('SHA-256').digest(partial.bytes).encodeHex().toString()
+                if (digest != apiSha256) throw new GradleException("not the expected ${apiVersion} API jar (SHA-256 ${digest}, expected ${apiSha256})")
+                partial.renameTo(target)
+                return
+            } catch (Exception failure) {
+                failures << "${url}: ${failure.message}"
+                partial.delete()
+            }
+        }
+        throw new GradleException("Could not download the protocol API jar:\n  ${failures.join('\n  ')}\n" +
+            'Download it from https://fantasticmock.com/ and build with -PhostApi=<path to the jar>.')
+    }
+}
+def protocolApi = files(localApi.isPresent() ? localApi.get() : downloadedApi).builtBy(downloadProtocolApi)
+
+// Libraries Fantastic Mock already provides to plugins; a plugin never bundles them.
+def hostProvided = ['slf4j-*.jar', 'jackson-*.jar', 'HikariCP-*.jar']
+
+subprojects {
+    apply plugin: 'java'
+    repositories { mavenCentral() }
+    java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
+
+    // The plugin's version is the one its protocol.yml declares.
+    def declared = file('protocol.yml').readLines().find { it ==~ /^\s+version:\s*\S+\s*$/ }
+    version = declared ? declared.split(':', 2)[1].trim() : 'dev'
+
+    dependencies {
+        compileOnly protocolApi
+        compileOnly 'com.fasterxml.jackson.core:jackson-databind:2.21.2'
+        testImplementation protocolApi
+        testImplementation 'com.fasterxml.jackson.core:jackson-databind:2.21.2'
+        testImplementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.21.2'
+        testImplementation 'org.assertj:assertj-core:3.27.3'
+        testImplementation platform('org.junit:junit-bom:5.12.2')
+        testImplementation 'org.junit.jupiter:junit-jupiter'
+        testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    }
+    tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+    tasks.named('processResources') { from('protocol.yml') }
+    tasks.named('test') { useJUnitPlatform() }
+    tasks.named('jar') { archiveBaseName = "fantasticmock-${project.name}" }
+
+    // The installable plugin: its JAR (protocol.yml at the root), its libraries, README and
+    // examples. The folder has no src/, so Fantastic Mock loads it without compiling, on a JRE.
+    def packagePlugin = tasks.register('packagePlugin', Sync) {
+        description = 'Builds the ready-to-install plugin folder.'
+        from tasks.named('jar')
+        from(configurations.runtimeClasspath) { exclude hostProvided }
+        from('README.md')
+        from(rootProject.file('LICENSE'))
+        from('examples') { into 'examples' }
+        into rootProject.layout.buildDirectory.dir("plugins/${project.name}")
+    }
+    tasks.register('pluginZip', Zip) {
+        description = 'Zips the ready-to-install plugin folder.'
+        from(packagePlugin) { into project.name }
+        archiveFileName = "${project.name}-${project.version}.zip"
+        destinationDirectory = rootProject.layout.buildDirectory.dir('distributions')
+    }
+    // For running the plugin from source: its libraries in lib/ beside src/.
+    tasks.register('prepareLibs', Sync) {
+        description = 'Downloads the plugin libraries into lib/.'
+        from(configurations.runtimeClasspath) { exclude hostProvided }
+        into 'lib'
+    }
+}
+
+tasks.register('packagePlugins') {
+    description = 'Builds every plugin folder and zip.'
+    dependsOn subprojects.collect { it.tasks.named('pluginZip') }
+}

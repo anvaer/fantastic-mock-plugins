@@ -1,0 +1,23 @@
+fantasticmock:
+  protocols:
+    external-enabled: true
+    instances:
+      # One instance per FIX version, each on its own port. Templates choose the instance,
+      # and with it the version, by settings.endpoint.
+      fixqfj42-demo:
+        protocol: fix-quickfixj
+        enabled: true
+        settings:
+          host: 127.0.0.1
+          port: 9886
+          begin-string: FIX.4.2
+          # Optional. Without it any TargetCompID (56) is accepted and the mock answers as it.
+          sender-comp-id: FMOCK
+      fixqfj44-demo:
+        protocol: fix-quickfixj
+        enabled: true
+        settings:
+          host: 127.0.0.1
+          port: 9887
+          begin-string: FIX.4.4
+          sender-comp-id: FMOCK

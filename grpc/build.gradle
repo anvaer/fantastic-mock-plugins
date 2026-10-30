@@ -1,0 +1,29 @@
+// gRPC (with its own shaded Netty) and protobuf are bundled with the plugin.
+def grpcVersion = '1.83.1'
+def protobufVersion = '3.25.8'
+dependencies {
+    implementation platform("io.grpc:grpc-bom:${grpcVersion}")
+    implementation 'io.grpc:grpc-netty-shaded'
+    implementation 'io.grpc:grpc-protobuf'
+    implementation "com.google.protobuf:protobuf-java-util:${protobufVersion}"
+    testImplementation 'io.grpc:grpc-stub'
+}
+
+// examples/hello.protoset is generated from examples/hello.proto and committed, so neither the
+// build nor the tests need protoc. After changing hello.proto, run: gradlew :grpc:generateDescriptor
+configurations { protoc { transitive = false } }
+def os = System.getProperty('os.name').toLowerCase()
+def arch = System.getProperty('os.arch').contains('aarch') ? 'aarch_64' : 'x86_64'
+def classifier = (os.contains('win') ? 'windows' : os.contains('mac') ? 'osx' : 'linux') + '-' + arch
+dependencies { protoc "com.google.protobuf:protoc:${protobufVersion}:${classifier}@exe" }
+tasks.register('generateDescriptor', Exec) {
+    description = 'Regenerates examples/hello.protoset from examples/hello.proto.'
+    inputs.file('examples/hello.proto')
+    outputs.file('examples/hello.protoset')
+    doFirst {
+        def compiler = configurations.protoc.singleFile
+        if (!os.contains('win')) compiler.setExecutable(true)
+        commandLine compiler.absolutePath, '--proto_path=examples', '--include_imports',
+                '--descriptor_set_out=examples/hello.protoset', 'examples/hello.proto'
+    }
+}

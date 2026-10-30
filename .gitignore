@@ -1,0 +1,20 @@
+# Build output, Gradle state and the downloaded protocol API jar
+build/
+.gradle/
+
+# Libraries downloaded by `gradlew prepareLibs`, and what Fantastic Mock writes when it runs a
+# plugin from source
+*/lib/
+*/.compiled/
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+bin/
+out/
+
+*.log

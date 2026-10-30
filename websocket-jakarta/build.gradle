@@ -1,0 +1,14 @@
+// The Jakarta WebSocket and Servlet APIs come from Fantastic Mock's own HTTP server at run time,
+// so the plugin bundles no libraries.
+dependencies {
+    compileOnly 'jakarta.websocket:jakarta.websocket-api:2.2.0'
+    compileOnly 'jakarta.websocket:jakarta.websocket-client-api:2.2.0'
+    compileOnly 'jakarta.servlet:jakarta.servlet-api:6.1.0'
+    testImplementation 'jakarta.websocket:jakarta.websocket-api:2.2.0'
+    testImplementation 'jakarta.websocket:jakarta.websocket-client-api:2.2.0'
+    testImplementation 'jakarta.servlet:jakarta.servlet-api:6.1.0'
+    testImplementation 'org.mockito:mockito-core:5.14.2'
+    // Building a ServerEndpointConfig needs an implementation's configurator: the same Jetty the
+    // application runs on.
+    testRuntimeOnly 'org.eclipse.jetty.ee11.websocket:jetty-ee11-websocket-jakarta-server:12.1.7'
+}
