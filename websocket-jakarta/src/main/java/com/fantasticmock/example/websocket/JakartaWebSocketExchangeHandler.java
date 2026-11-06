@@ -52,15 +52,16 @@ final class JakartaWebSocketExchangeHandler {
     return future;
   }
 
+  // The message's body, and the session it came on with the path and query that session was
+  // opened with: protocol.yml declares those three as metadata, which logs show apart.
   private Map<String, Object> requestFields(Session session, String text) {
     Map<String, Object> fields = new LinkedHashMap<>();
+    fields.put("session", session.getId());
     fields.put("path", session.getRequestURI().getPath());
-    fields.put("url", session.getRequestURI().toString());
     if (session.getQueryString() != null) {
       fields.put("query", session.getQueryString());
     }
     fields.put("body", text);
-    fields.put("messageType", "text");
     return fields;
   }
 

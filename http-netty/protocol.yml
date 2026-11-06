@@ -40,7 +40,6 @@ message:
         routing: true
         options: [ANY, GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
       path: string
-      url: string
       query: query-string
       header:
         from: headers

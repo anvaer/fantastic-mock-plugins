@@ -3,7 +3,7 @@ provider: com.fantasticmock.example.websocket.JakartaWebSocketProtocolPlugin
 
 descriptor:
   id: websocket-jakarta
-  displayName: WebSocket (Jakarta)
+  displayName: WebSocket
   version: 1.1.0
   capabilities: [CONNECTION_ORIENTED]
 
@@ -11,19 +11,23 @@ runtime:
   endpoint:
     path: /events
   settings:
-    endpoint-path: { type: string, pattern: "^/.*" }
+    endpoint-path: { type: string, pattern: "^/.*", connection: path }
+    # Messages an endpoint handles at once, delayed answers still to send included. A message
+    # beyond it gets no answer and counts as rejected.
+    max-in-flight: { type: integer, default: 1024, min: 1, max: 1000000 }
 
 message:
   request:
     fields:
-      path: string
-      url: string
-      query: query-string
+      # Where the connection was opened and which one it is: shown under Details, not with the
+      # message, which is only its body.
+      session: { type: string, label: Session ID, metadata: true, use: [variable] }
+      path: { type: path, metadata: true }
+      query: { type: query-string, metadata: true }
       body:
         type: text
         raw: true
         decoders: [json, xml]
-      messageType: string
 
 template:
   response:
@@ -46,3 +50,30 @@ template:
         label: Body
         type: text
         description: WebSocket text callback template
+      # Each default is what the plugin uses when a template leaves the field out; the editor
+      # shows it in the empty field.
+      awaitReplies:
+        label: Replies to wait for
+        type: integer
+        default: 0
+        description: Keep the connection open until this many replies arrived; with a reply pattern, only replies it matches count. 0 closes it right after sending
+      replyPattern:
+        label: Reply pattern
+        type: string
+        description: Regular expression a reply must contain to count; set alone, the callback waits for one such reply
+      timeoutMs:
+        label: Reply timeout (ms)
+        type: integer
+        default: 10000
+        description: Longest wait for the replies, counted from when the message was sent; fewer replies by then fail the callback
+      ping:
+        label: Ping message
+        group: Ping
+        type: text
+        description: Text sent on the connection at every ping interval while the callback waits for replies
+      pingIntervalMs:
+        label: Ping interval (ms)
+        group: Ping
+        type: integer
+        default: 30000
+        description: Time between ping messages; the first goes one interval after the message

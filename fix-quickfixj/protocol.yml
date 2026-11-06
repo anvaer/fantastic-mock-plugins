@@ -3,7 +3,7 @@ provider: com.fantasticmock.example.fixquickfixj.QuickFixProtocolPlugin
 
 descriptor:
   id: fix-quickfixj
-  displayName: FIX 4.2 / 4.4 (QuickFIX/J)
+  displayName: FIX
   version: 1.4.0
   capabilities: [CONNECTION_ORIENTED]
 

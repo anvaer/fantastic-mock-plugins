@@ -55,4 +55,14 @@ class NettyHttpServerTest {
       assertThat(kit.statistics("netty-test").value(ProtocolStatistics.MESSAGES)).isEqualTo(1);
     }
   }
+
+  @Test
+  void reportsItsWorkerEventLoops() throws Exception {
+    try (var kit = ProtocolTestKit.of(new NettyHttpProtocolPlugin())) {
+      var instance = (NettyHttpServer) kit.start("netty-loops", Map.of("exchange-mode", "protocol", "port", 0,
+          "worker-threads", 3));
+      // Read the way the host reads it, once a second: nothing is queued on an idle server.
+      assertThat(instance.threads()).isEqualTo(Map.of("busy", 0, "max", 3, "waiting", 0));
+    }
+  }
 }

@@ -35,6 +35,7 @@ import quickfix.SessionSettings;
 import quickfix.ThreadedSocketAcceptor;
 import quickfix.mina.NetworkingOptions;
 import quickfix.mina.SessionConnector;
+import quickfix.mina.ThreadPerSessionEventHandlingStrategy;
 import quickfix.mina.acceptor.AcceptorSessionProvider;
 
 /**
@@ -58,7 +59,7 @@ final class QuickFixAcceptor
   private final QuickFixUpstream upstream;
   private final Map<SessionID, Session> sessions = new ConcurrentHashMap<>();
   private volatile SessionFactory factory;
-  private volatile ThreadedSocketAcceptor acceptor;
+  private volatile Engine acceptor;
   private volatile String lastFailure = "";
 
   QuickFixAcceptor(ProtocolEndpoint endpoint) {
@@ -101,7 +102,7 @@ final class QuickFixAcceptor
     factory = new DefaultSessionFactory(
         application, new MemoryStoreFactory(), this::log, new WireMessage.Factory(dictionary()));
     // One thread per session keeps a session's messages in order without holding up the others.
-    ThreadedSocketAcceptor engine = new ThreadedSocketAcceptor(factory, settings);
+    Engine engine = new Engine(factory, settings);
     engine.setSessionProvider(new InetSocketAddress(host, port), this);
     acceptor = engine;
     engine.start();
@@ -257,9 +258,39 @@ final class QuickFixAcceptor
     return details;
   }
 
+  /**
+   * The thread of each session, which takes its messages one at a time: busy are those with
+   * messages queued for them, and waiting is those messages. Declared without {@code @Override}:
+   * hosts before 1.0.6 do not ask.
+   */
+  public Map<String, Integer> threads() {
+    Engine engine = acceptor;
+    if (engine == null || sessions.isEmpty()) return Map.of();
+    int busy = 0;
+    int waiting = 0;
+    for (SessionID session : sessions.keySet()) {
+      int queued = engine.queued(session);
+      if (queued > 0) busy++;
+      waiting += queued;
+    }
+    return Map.of("busy", busy, "max", sessions.size(), "waiting", waiting);
+  }
+
+  /** QuickFIX/J's acceptor with a thread per session, telling what each session's thread has queued. */
+  private static final class Engine extends ThreadedSocketAcceptor {
+    Engine(SessionFactory factory, SessionSettings settings) throws ConfigError {
+      super(factory, settings);
+    }
+
+    int queued(SessionID session) {
+      return getEventHandlingStrategy() instanceof ThreadPerSessionEventHandlingStrategy perSession
+          ? perSession.getQueueSize(session) : 0;
+    }
+  }
+
   @Override
   public void close() {
-    ThreadedSocketAcceptor engine = acceptor;
+    Engine engine = acceptor;
     if (engine == null) return;
     acceptor = null;
     for (Session session : sessions.values()) {
@@ -280,7 +311,7 @@ final class QuickFixAcceptor
   }
 
   private SocketAddress localAddress() {
-    ThreadedSocketAcceptor engine = acceptor;
+    Engine engine = acceptor;
     if (engine == null) return null;
     for (IoAcceptor listener : engine.getEndpoints()) {
       if (listener.getLocalAddress() != null) return listener.getLocalAddress();

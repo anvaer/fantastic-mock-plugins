@@ -54,7 +54,8 @@ Generate a descriptor set with all imports:
 protoc --proto_path=protos --include_imports --descriptor_set_out=service.protoset service.proto
 ```
 
-Point `descriptor-file` at it. All unary and server-streaming methods are registered at
+Point `descriptor-file` at it, or send it with the Upload button where the admin manages endpoints
+(the setting is declared `format: file`). All unary and server-streaming methods are registered at
 instance startup; client-streaming and bidirectional methods are left out (a call to one gets
 `UNIMPLEMENTED`) and listed as `notServed` in the instance health. Restart/reload the instance
 after changing descriptors.

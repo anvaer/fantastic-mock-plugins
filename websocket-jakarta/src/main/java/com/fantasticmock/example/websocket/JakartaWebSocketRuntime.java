@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 
 /** Owns one configured endpoint and its connected server and callback sessions. */
 final class JakartaWebSocketRuntime implements ProtocolPluginInstance, ProtocolOutboundSender {
@@ -28,7 +29,7 @@ final class JakartaWebSocketRuntime implements ProtocolPluginInstance, ProtocolO
   JakartaWebSocketRuntime(ProtocolEndpoint endpoint) {
     this.endpoint = endpoint;
     this.exchanges = new JakartaWebSocketExchangeHandler(endpoint);
-    this.callbacks = new JakartaWebSocketCallbackClient(endpoint.statistics(), exchanges);
+    this.callbacks = new JakartaWebSocketCallbackClient(endpoint.statistics(), exchanges, endpoint.scheduler());
     String configured = endpoint.settings().text("endpoint-path",
         endpoint.definition().runtime().endpoint().path());
     this.path = configured.startsWith("/") ? configured : "/" + configured;
@@ -83,6 +84,17 @@ final class JakartaWebSocketRuntime implements ProtocolPluginInstance, ProtocolO
   @Override
   public CompletionStage<Long> send(JsonNode callback) {
     return callbacks.send(callback);
+  }
+
+  /**
+   * Reports each message of a callback's session, the ones it sent and the ones it received,
+   * so that the host logs each as an entry of its own. Declared without {@code @Override}, so
+   * the plugin still builds against protocol API 1.0.5, whose hosts call only
+   * {@link #send(JsonNode)}: there a callback still waits and pings, and is logged once.
+   */
+  public CompletionStage<Long> send(JsonNode callback, BiConsumer<JsonNode, Long> sent,
+      BiConsumer<JsonNode, Long> received) {
+    return callbacks.send(callback, sent, received);
   }
 
   @Override

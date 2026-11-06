@@ -1,9 +1,9 @@
 # Fantastic Mock protocol plugins
 
 Plugins that teach [Fantastic Mock](https://fantasticmock.com/), the free, self-hosted API
-mock server, more protocols. Each one is a folder you drop next to Fantastic Mock: your
-templates then match, answer and log that protocol like any HTTP template, with variables,
-delays, callbacks, traffic logs and metrics.
+mock server, more protocols. Each one is a folder, from its release zip or your own build,
+that you drop next to Fantastic Mock: your templates then match, answer and log that protocol
+like any HTTP template, with variables, delays, callbacks, traffic logs and metrics.
 
 | Plugin | Mocks | Listens on | Bundled libraries |
 | --- | --- | --- | --- |
@@ -14,7 +14,9 @@ delays, callbacks, traffic logs and metrics.
 
 **Requirements:** Fantastic Mock 1.0.5 or later and Java 21. A JRE is enough for the
 ready-made plugins; building them needs a JDK. fix-quickfixj needs a copy of 1.0.5
-downloaded on October 26, 2026 or later; download it again if yours is older.
+downloaded on October 26, 2026 or later; download it again if yours is older. In
+websocket-jakarta, `request.path.segment<N>` and taking the Example request's path from the
+endpoint need Fantastic Mock 1.0.6 or later; the plugin runs on 1.0.5 without them.
 
 ## Install
 
@@ -41,6 +43,10 @@ downloaded on October 26, 2026 or later; download it again if yours is older.
 
    Keep the libraries next to the plugin JAR. A plugin JAR copied on its own fails to start
    with a `NoClassDefFoundError`.
+
+   Don't copy a plugin's folder straight from this repository: it has no libraries, so
+   Fantastic Mock fails at startup with `package ... does not exist`, and the plugin's
+   instances then report `unknown protocol`.
 
 3. **Add an instance to `application.yml`.** An instance is one running endpoint of the
    plugin: a port, or a path for WebSocket. Fantastic Mock reads `application.yml` from the
@@ -100,7 +106,9 @@ Where Fantastic Mock runs on a JDK, it can also compile a plugin from its source
 starts, which is handy while you change one. Run `./gradlew prepareLibs` to download each
 plugin's libraries into its `lib/` folder, then copy the plugin's `protocol.yml`, `src/main/`,
 `lib/` and `examples/` into `protocol-plugins/<plugin>/`. A folder with a `src/` is compiled;
-one without is loaded as it is. To check a source folder before starting:
+one without is loaded as it is. If startup logs `package ... does not exist`, `lib/` is missing
+or empty: run `./gradlew prepareLibs` and copy it across. To check a source folder before
+starting:
 
 ```shell
 java -jar fantastic-mock-1.0.5.jar --protocol-plugin check protocol-plugins/<plugin>

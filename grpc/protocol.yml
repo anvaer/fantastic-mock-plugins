@@ -2,14 +2,14 @@ apiVersion: 5
 provider: com.fantasticmock.example.grpc.GrpcProtocolPlugin
 descriptor:
   id: grpc
-  displayName: gRPC (unary and server streaming)
+  displayName: gRPC
   version: 1.5.0
   capabilities: [CONNECTION_ORIENTED]
 runtime:
   settings:
     host: { type: string, default: "127.0.0.1" }
     port: { type: integer, default: 9091, min: 0, max: 65535 }
-    descriptor-file: { type: string, default: "protocol-plugins/grpc/examples/hello.protoset" }
+    descriptor-file: { type: string, format: file, accept: ".protoset,.desc,.pb,.binpb,.bin", default: "protocol-plugins/grpc/examples/hello.protoset" }
     max-in-flight: { type: integer, default: 1024, min: 1, max: 1000000 }
     max-message-bytes: { type: integer, default: 4194304, min: 1, max: 1073741824 }
 message:

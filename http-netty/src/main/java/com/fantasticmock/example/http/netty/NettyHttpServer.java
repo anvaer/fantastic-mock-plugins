@@ -20,7 +20,9 @@ import io.netty.handler.codec.http.HttpDecoderConfig;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.timeout.IdleStateHandler;
+import io.netty.util.concurrent.EventExecutor;
 import io.netty.util.concurrent.GlobalEventExecutor;
+import io.netty.util.concurrent.SingleThreadEventExecutor;
 import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -114,6 +116,27 @@ final class NettyHttpServer implements ProtocolPluginInstance {
         "connections", connections.size(),
         "localAddress", address == null ? "" : address.toString(),
         "exchangeMode", mode.name());
+  }
+
+  /**
+   * The worker event loops, which read and write every connection: busy are those with tasks
+   * queued for them, such as the responses the virtual threads that answered hand back to be
+   * written, and waiting is those tasks. Declared without {@code @Override}: hosts before 1.0.6
+   * do not ask.
+   */
+  public Map<String, Integer> threads() {
+    EventLoopGroup group = workers;
+    if (group == null) return Map.of();
+    int loops = 0;
+    int busy = 0;
+    int waiting = 0;
+    for (EventExecutor loop : group) {
+      loops++;
+      int queued = loop instanceof SingleThreadEventExecutor single ? single.pendingTasks() : 0;
+      if (queued > 0) busy++;
+      waiting += queued;
+    }
+    return Map.of("busy", busy, "max", loops, "waiting", waiting);
   }
 
   @Override

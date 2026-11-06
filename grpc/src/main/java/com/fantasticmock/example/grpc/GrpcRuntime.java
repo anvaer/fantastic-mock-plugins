@@ -5,6 +5,16 @@ import com.fantasticmock.protocol.api.exchange.ProtocolMessageView;
 import com.fantasticmock.protocol.api.plugin.*;
 import io.grpc.*;
 import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
+import io.grpc.netty.shaded.io.netty.channel.EventLoopGroup;
+import io.grpc.netty.shaded.io.netty.channel.ServerChannel;
+import io.grpc.netty.shaded.io.netty.channel.epoll.Epoll;
+import io.grpc.netty.shaded.io.netty.channel.epoll.EpollEventLoopGroup;
+import io.grpc.netty.shaded.io.netty.channel.epoll.EpollServerSocketChannel;
+import io.grpc.netty.shaded.io.netty.channel.nio.NioEventLoopGroup;
+import io.grpc.netty.shaded.io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.grpc.netty.shaded.io.netty.util.concurrent.DefaultThreadFactory;
+import io.grpc.netty.shaded.io.netty.util.concurrent.EventExecutor;
+import io.grpc.netty.shaded.io.netty.util.concurrent.SingleThreadEventExecutor;
 import java.net.InetSocketAddress;
 import java.nio.file.Path;
 import java.util.*;
@@ -18,6 +28,9 @@ final class GrpcRuntime implements ProtocolPluginInstance, ProtocolOutboundSende
   private final ProtocolEndpoint endpoint;
   private final Set<GrpcCall> calls = ConcurrentHashMap.newKeySet();
   private Server server;
+  // The server's own event loops, made as gRPC makes its shared defaults, so they can be read.
+  private EventLoopGroup acceptors;
+  private volatile EventLoopGroup workers;
   private List<String> skipped = List.of();
   private volatile GrpcCallbackClient callbacks;
   private volatile GrpcUpstream upstream;
@@ -43,7 +56,16 @@ final class GrpcRuntime implements ProtocolPluginInstance, ProtocolOutboundSende
           });
     }
     skipped = List.copyOf(schema.skipped);
+    // As gRPC's own defaults: one thread accepts, twice the processors read and write (0), on epoll
+    // where the platform has it.
+    boolean epoll = Epoll.isAvailable();
+    acceptors = loops(epoll, 1, "grpc-boss");
+    workers = loops(epoll, 0, "grpc-worker");
+    Class<? extends ServerChannel> channel = epoll ? EpollServerSocketChannel.class : NioServerSocketChannel.class;
     var builder = NettyServerBuilder.forAddress(new InetSocketAddress(settings.text("host"), settings.integer("port")))
+        .bossEventLoopGroup(acceptors)
+        .workerEventLoopGroup(workers)
+        .channelType(channel)
         .maxInboundMessageSize(settings.integer("max-message-bytes"))
         .maxConcurrentCallsPerConnection(settings.integer("max-in-flight"))
         .directExecutor(); // Listener callbacks only hand template work to the endpoint.
@@ -55,6 +77,31 @@ final class GrpcRuntime implements ProtocolPluginInstance, ProtocolOutboundSende
   }
 
   int port() { return server.getPort(); } // Ephemeral-port tests.
+
+  private static EventLoopGroup loops(boolean epoll, int threads, String name) {
+    var factory = new DefaultThreadFactory(name, true);
+    return epoll ? new EpollEventLoopGroup(threads, factory) : new NioEventLoopGroup(threads, factory);
+  }
+
+  /**
+   * The worker event loops, which read and write every call: busy are those with tasks queued
+   * for them, such as the replies the virtual threads that answered hand back to be written, and
+   * waiting is those tasks. Declared without {@code @Override}: hosts before 1.0.6 do not ask.
+   */
+  public Map<String, Integer> threads() {
+    EventLoopGroup group = workers;
+    if (group == null) return Map.of();
+    int loops = 0;
+    int busy = 0;
+    int waiting = 0;
+    for (EventExecutor loop : group) {
+      loops++;
+      int queued = loop instanceof SingleThreadEventExecutor single ? single.pendingTasks() : 0;
+      if (queued > 0) busy++;
+      waiting += queued;
+    }
+    return Map.of("busy", busy, "max", loops, "waiting", waiting);
+  }
 
   @Override
   public CompletionStage<Long> send(JsonNode callback) {
@@ -107,5 +154,9 @@ final class GrpcRuntime implements ProtocolPluginInstance, ProtocolOutboundSende
       // Release the port before a reloaded instance binds it again.
       server.awaitTermination(5, TimeUnit.SECONDS);
     }
+    // gRPC leaves event loops it was given to their owner.
+    EventLoopGroup workerGroup = workers;
+    if (workerGroup != null) workerGroup.shutdownGracefully(0, 5, TimeUnit.SECONDS);
+    if (acceptors != null) acceptors.shutdownGracefully(0, 5, TimeUnit.SECONDS);
   }
 }

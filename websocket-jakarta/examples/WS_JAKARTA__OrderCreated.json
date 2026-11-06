@@ -21,7 +21,6 @@
     ]
   },
   "requestSample": {
-    "path": "/events",
     "query": "tenant=demo",
     "body": "{\"type\":\"order.created\",\"orderId\":\"ORD-42\"}"
   },
@@ -42,12 +41,6 @@
     {
       "name": "tenant",
       "source": "request.query.tenant"
-    },
-    {
-      "name": "callbackBase",
-      "source": "request.url",
-      "regex": "^(ws://[^/]+)",
-      "group": 1
     }
   ],
   "callbacks": [
@@ -55,7 +48,7 @@
       "enabled": true,
       "async": true,
       "transport": "websocket-jakarta",
-      "url": "{{callbackBase}}/callbacks",
+      "url": "ws://localhost:8080/callbacks",
       "headers": {
         "X-FantasticMock-Callback": "order-audit"
       },

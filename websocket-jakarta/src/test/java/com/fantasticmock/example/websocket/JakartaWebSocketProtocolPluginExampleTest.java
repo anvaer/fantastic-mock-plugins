@@ -23,8 +23,14 @@ class JakartaWebSocketProtocolPluginExampleTest {
     ProtocolPlugin plugin = new JakartaWebSocketProtocolPlugin();
     var definition = plugin.definition();
     assertThat(definition.provider()).isEqualTo(JakartaWebSocketProtocolPlugin.class.getName());
-    assertThat(definition.descriptor().displayName()).isEqualTo("WebSocket (Jakarta)");
+    assertThat(definition.descriptor().displayName()).isEqualTo("WebSocket");
     assertThat(definition.runtime().endpoint().path()).isEqualTo("/events");
+    assertThat(definition.message().request()).containsOnlyKeys("session", "path", "query", "body");
+    // A session ID can be echoed in a response, but no template matches on one.
+    assertThat(definition.message().request().get("session").use())
+        .containsExactly(ProtocolMessageDefinition.Use.VARIABLE);
+    assertThat(definition.message().request().get("path").type()).isEqualTo("path");
+    assertThat(definition.runtime().settings().path("endpoint-path").path("connection").asText()).isEqualTo("path");
     assertThat(definition.message().request().get("query").decoders()).containsExactly("query");
     assertThat(definition.message().request().get("body").decoders()).containsExactly("json", "xml");
     assertThat(definition.template().callback().keySet()).contains("url", "headers", "body");

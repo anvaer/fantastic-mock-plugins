@@ -210,6 +210,8 @@ class QuickFixPluginTest {
     assertEquals(1, kit.statistics("fix-test").value(ProtocolStatistics.MESSAGES));
     assertEquals(1, kit.statistics("fix-test").value("logons"));
     assertEquals(List.of("CLIENT1 -> FMOCK"), acceptor.healthDetails().get("sessions"));
+    // A thread for the one session, with nothing left queued for it once the order was answered.
+    awaitValue(Map.of("busy", 0, "max", 1, "waiting", 0), acceptor::threads);
 
     client.send("5");
     assertEquals("5", client.receive().msgType());
@@ -1107,6 +1109,12 @@ class QuickFixPluginTest {
     Client client = new Client(beginString, sender, target, to.port());
     clients.add(client);
     return client;
+  }
+
+  private static void awaitValue(Object expected, Supplier<?> actual) throws InterruptedException {
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+    while (!expected.equals(actual.get()) && System.nanoTime() < deadline) Thread.sleep(10);
+    assertEquals(expected, actual.get());
   }
 
   private static void awaitEquals(int expected, Supplier<Integer> actual) throws InterruptedException {

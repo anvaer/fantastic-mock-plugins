@@ -73,6 +73,21 @@ class GrpcPluginTest {
     assertEquals(code, assertThrows(StatusRuntimeException.class, call::run).getStatus().getCode());
   }
 
+  @Test void reportsItsOwnWorkerEventLoops() throws Exception {
+    var response = result("""
+        {"body":{"message":"Hello Ada"}}
+        """, 0);
+    start(message -> response, Map.of());
+    invoke(channel);
+    Map<String, Integer> threads = runtime.threads();
+    assertEquals(Set.of("busy", "max", "waiting"), threads.keySet());
+    // As many as gRPC's shared default would have: twice the processors, unless set otherwise.
+    assertTrue(threads.get("max") >= 1);
+    assertTrue(threads.get("busy") <= threads.get("max"));
+    runtime.close();
+    runtime = null;
+  }
+
   @Test void unaryProtobufMetadataAndDelayedAcknowledgement() throws Exception {
     var response = result("""
         {"status":"OK","headers":{"x-reply":"mock"},"body":{"message":"Hello Ada"}}

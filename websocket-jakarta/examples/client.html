@@ -5,18 +5,36 @@
     <title>FantasticMock Jakarta WebSocket plugin example</title>
   </head>
   <body>
+    <p>
+      <label>
+        Address
+        <input id="address" size="60" value="ws://localhost:8080/events?tenant=demo" />
+      </label>
+    </p>
+    <p>
+      <label>
+        Message
+        <input id="message" size="60" value='{"type":"order.created","orderId":"ORD-42"}' />
+      </label>
+    </p>
     <button id="connect">Connect and send</button>
     <pre id="output">Idle</pre>
     <script>
       document.querySelector("#connect").addEventListener("click", () => {
         const output = document.querySelector("#output");
-        const socket = new WebSocket("ws://localhost:8080/events?tenant=demo");
+        const address = document.querySelector("#address").value.trim();
+        const text = document.querySelector("#message").value;
+        let socket;
+        try {
+          socket = new WebSocket(address);
+        } catch (failure) {
+          output.textContent = "Not a WebSocket address: " + address;
+          return;
+        }
 
         socket.addEventListener("open", () => {
-          output.textContent = "Connected; sending order.created";
-          socket.send(
-            JSON.stringify({ type: "order.created", orderId: "ORD-42" }),
-          );
+          output.textContent = "Connected to " + address + "; sending the message";
+          socket.send(text);
         });
         const messages = [];
         socket.addEventListener("message", (event) => {
@@ -27,7 +45,9 @@
           output.textContent += "\nClosed: " + event.code + " " + event.reason;
         });
         socket.addEventListener("error", () => {
-          output.textContent = "WebSocket connection failed";
+          output.textContent =
+            "Could not connect to " + address +
+            ". Check that Fantastic Mock is running on that port and has an enabled endpoint on that path.";
         });
       });
     </script>

@@ -4,8 +4,10 @@
 that need more throughput or lower latency than the built-in listener. It serves your
 existing HTTP templates (`settings.transport: http`) through the same engine as the main
 port, so matching, variables, custom handlers, callbacks, proxy modes, traffic logs and
-HTTP metrics behave exactly as they do there. Point your load test at the new port; nothing
-else changes.
+HTTP metrics behave as they do there. Its requests are counted as its own endpoint's,
+under `http-netty` and the instance ID, so the Dashboard shows the port's TPS and a
+template's `settings.endpoints` can name it (Fantastic Mock 1.0.6; an earlier version counts
+them on the main port). Point your load test at the new port; nothing else changes.
 
 ## Install and configure
 
