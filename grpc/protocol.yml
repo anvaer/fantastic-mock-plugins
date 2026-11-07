@@ -44,7 +44,11 @@ template:
         label: Full method name
         type: string
         required: true
-        description: Fully qualified service/method from the instance descriptor set
+        description: Fully qualified service/method from the descriptor set
+      descriptorFile:
+        label: Descriptor set
+        type: string
+        description: "Path of a protoc --include_imports descriptor set (.protoset) with the method and its messages; empty uses the instance's descriptor-file. A relative path is read from the working directory"
       headers: { label: Metadata, type: map }
       body: { label: Protobuf JSON body, type: json }
       timeoutMs:

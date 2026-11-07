@@ -3,6 +3,7 @@ package com.fantasticmock.example.fixquickfixj;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -45,9 +46,11 @@ import java.util.Set;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.AfterEach;
@@ -556,6 +559,241 @@ class QuickFixPluginTest {
     ExecutionException unknown = assertThrows(ExecutionException.class,
         () -> sender.send(fill.deepCopy().put("targetCompId", "CLIENT9")).toCompletableFuture().get(5, TimeUnit.SECONDS));
     assertEquals("No FIX session is logged on for CompID CLIENT9", unknown.getCause().getMessage());
+  }
+
+  @Test void aCallbackWaitsForTheRepliesItsPatternMatchesAndReportsEachMessage() throws Exception {
+    // Orders are answered; anything else unmatched gets a BusinessMessageReject.
+    start(request -> "D".equals(request.messageType())
+        ? result(response("{\"msgType\":\"8\",\"tags\":{\"37\":\"MOCK-1\"}}", 0))
+        : ProtocolExchangeResult.noMatch(), Map.of());
+    Client client = connect("CLIENT1", "FMOCK");
+    client.logon(30);
+    List<JsonNode> sent = new CopyOnWriteArrayList<>();
+    List<JsonNode> received = new CopyOnWriteArrayList<>();
+    List<Long> receivedSizes = new CopyOnWriteArrayList<>();
+    JsonNode quoteRequest = mapper.readTree("{\"msgType\":\"R\",\"tags\":{\"131\":\"QR-1\"},"
+        + "\"replyPattern\":\"\\\\|35=S\\\\|\",\"timeoutMs\":5000}");
+    CompletableFuture<Long> done = acceptor.send(quoteRequest, (message, size) -> sent.add(message),
+        (message, size) -> {
+          received.add(message);
+          receivedSizes.add(size);
+        }).toCompletableFuture();
+
+    Received asked = client.receive();
+    assertEquals("R", asked.msgType());
+    // The message as it went, with the session's header.
+    assertEquals(1, sent.size());
+    assertEquals("R", sent.getFirst().path("msgType").asText());
+    assertEquals("FMOCK", sent.getFirst().path("senderCompId").asText());
+    assertEquals("QR-1", sent.getFirst().path("tag").path("131").asText());
+    assertEquals(asked.text, sent.getFirst().path("body").asText());
+
+    // An order is no reply: the templates answer it as ever, and the callback still waits.
+    client.send("D", "11", "ORD-1");
+    assertEquals("8", client.receive().msgType());
+    assertFalse(done.isDone());
+    String quote = client.send("S", "131", "QR-1", "117", "Q-1");
+    assertEquals((long) asked.text.length(), done.get(5, TimeUnit.SECONDS));
+    assertEquals(1, received.size());
+    assertEquals("S", received.getFirst().path("msgType").asText());
+    assertEquals("CLIENT1", received.getFirst().path("senderCompId").asText());
+    assertEquals(quote, received.getFirst().path("body").asText());
+    assertEquals(List.of((long) quote.length()), receivedSizes);
+    // The reply never reached the templates, so nothing rejected it: the next message the client
+    // gets answers its next order.
+    assertEquals(1, requests.size());
+    client.send("D", "11", "ORD-2");
+    Received next = client.receive();
+    assertEquals("8", next.msgType());
+    assertEquals(2, requests.size());
+  }
+
+  @Test void aCallbackWithAUrlLogsOnToThatServerAsAClientOfItsOwn() throws Exception {
+    start(request -> ProtocolExchangeResult.noMatch(), Map.of());
+    try (ServerSocket server = new ServerSocket(0)) {
+      server.setSoTimeout(12000);
+      List<JsonNode> sent = new CopyOnWriteArrayList<>();
+      List<JsonNode> received = new CopyOnWriteArrayList<>();
+      JsonNode quoteRequest = mapper.readTree("{\"url\":\"fix://127.0.0.1:" + server.getLocalPort() + "\","
+          + "\"senderCompId\":\"FMOCK\",\"targetCompId\":\"VENUE\","
+          + "\"logonTags\":{\"553\":\"mock\",\"554\":\"secret\",\"108\":\"20\"},"
+          + "\"msgType\":\"R\",\"tags\":{\"131\":\"QR-1\"},\"replyPattern\":\"\\\\|35=S\\\\|\",\"timeoutMs\":5000,"
+          + "\"keepSessionMs\":0}");
+      CompletableFuture<Long> done = acceptor.send(quoteRequest, (message, size) -> sent.add(message),
+          (message, size) -> received.add(message)).toCompletableFuture();
+
+      // A hand-written server: the callback logs on with the CompIDs and fields it was given.
+      Client venue = new Client(FIX42, "VENUE", "FMOCK", server.accept());
+      clients.add(venue);
+      Received logon = venue.receive();
+      assertEquals("A", logon.msgType());
+      assertEquals(List.of("FMOCK", "VENUE", "1", "Y", "20", "mock", "secret"), List.of(logon.get(49),
+          logon.get(56), logon.get(34), logon.get(141), logon.get(108), logon.get(553), logon.get(554)));
+      venue.send("A", "98", "0", "108", "20", "141", "Y");
+      Received asked = venue.receive();
+      assertEquals("R", asked.msgType());
+      assertEquals("QR-1", asked.get(131));
+      assertEquals("2", asked.get(34));
+
+      // Whatever the server sends is reported; only what the pattern matches is the reply.
+      venue.send("B", "148", "Headline");
+      String quote = venue.send("S", "131", "QR-1", "117", "Q-1");
+      assertEquals((long) asked.text.length(), done.get(5, TimeUnit.SECONDS));
+      assertEquals(List.of("R"), sent.stream().map(message -> message.path("msgType").asText()).toList());
+      assertEquals(asked.text, sent.getFirst().path("body").asText());
+      assertEquals(List.of("B", "S"), received.stream().map(message -> message.path("msgType").asText()).toList());
+      assertEquals(quote, received.get(1).path("body").asText());
+      // The Logon is none of the callback's messages, so its password is never logged.
+      assertFalse(sent.toString().contains("secret") || received.toString().contains("secret"));
+
+      // Kept for no time, the session logs out as soon as the callback is over, and hangs up.
+      assertEquals("5", venue.receive().msgType());
+      venue.send("5");
+      assertNull(venue.receiveOrNull());
+    }
+    // The clients of the endpoint never saw any of it.
+    assertTrue(requests.isEmpty());
+  }
+
+  @Test void callbacksWithAUrlShareTheSessionOfTheirCompIdsAndOpenOneWhenThereIsNone() throws Exception {
+    start(request -> ProtocolExchangeResult.noMatch(), Map.of());
+    try (ServerSocket server = new ServerSocket(0)) {
+      server.setSoTimeout(12000);
+      ObjectNode order = (ObjectNode) mapper.readTree("{\"url\":\"fix://127.0.0.1:" + server.getLocalPort() + "\","
+          + "\"senderCompId\":\"FMOCK\",\"targetCompId\":\"VENUE\",\"msgType\":\"D\","
+          + "\"tags\":{\"11\":\"A\",\"55\":\"IBM\"},\"replyPattern\":\"\\\\|39=2\\\\|\",\"timeoutMs\":5000,"
+          + "\"keepSessionMs\":1000}");
+      List<String> toA = new CopyOnWriteArrayList<>();
+      List<String> toB = new CopyOnWriteArrayList<>();
+      // Two callbacks before the session is there: one Logon serves both.
+      CompletableFuture<Long> a = acceptor.send(order, null, (message, size) -> toA.add(message.path("msgType").asText()))
+          .toCompletableFuture();
+      CompletableFuture<Long> b = acceptor.send(tags(order, "11", "B"), null,
+          (message, size) -> toB.add(message.path("msgType").asText())).toCompletableFuture();
+      Client venue = new Client(FIX42, "VENUE", "FMOCK", server.accept());
+      clients.add(venue);
+      assertEquals("A", venue.receive().msgType());
+      venue.send("A", "98", "0", "108", "30", "141", "Y");
+      assertEquals(Set.of("A", "B"), Set.of(venue.receive().get(11), venue.receive().get(11)));
+
+      // Answers go to the callback whose ClOrdID they repeat, in whatever order they come; a
+      // message that names no request goes to the latest callback still waiting.
+      venue.send("8", "11", "B", "39", "2", "150", "2");
+      b.get(5, TimeUnit.SECONDS);
+      venue.send("B", "148", "Headline");
+      venue.send("8", "11", "A", "39", "2", "150", "2");
+      a.get(5, TimeUnit.SECONDS);
+      assertEquals(List.of("8"), toB);
+      assertEquals(List.of("B", "8"), toA);
+
+      // The next callback with these CompIDs goes over the same session: no Logon, numbers go on.
+      CompletableFuture<Long> c = acceptor.send(tags(order, "11", "C").put("replyPattern", ""), null, null)
+          .toCompletableFuture();
+      Received third = venue.receive();
+      assertEquals(List.of("D", "C", "4"), List.of(third.msgType(), third.get(11), third.get(34)));
+      c.get(5, TimeUnit.SECONDS);
+
+      // Other CompIDs have a session of their own.
+      CompletableFuture<Long> other = acceptor.send(tags(order, "11", "D").put("senderCompId", "FMOCK2")
+          .put("replyPattern", ""), null, null).toCompletableFuture();
+      Client second = new Client(FIX42, "VENUE", "FMOCK2", server.accept());
+      clients.add(second);
+      Received logon = second.receive();
+      assertEquals(List.of("A", "FMOCK2"), List.of(logon.msgType(), logon.get(49)));
+      second.send("A", "98", "0", "108", "30", "141", "Y");
+      assertEquals("D", second.receive().get(11));
+      other.get(5, TimeUnit.SECONDS);
+
+      // Unused for keepSessionMs, each logs out.
+      for (Client client : List.of(venue, second)) {
+        assertEquals("5", client.receive().msgType());
+        client.send("5");
+        assertNull(client.receiveOrNull());
+      }
+    }
+  }
+
+  private static ObjectNode tags(ObjectNode callback, String tag, String value) {
+    ObjectNode copy = callback.deepCopy();
+    ((ObjectNode) copy.path("tags")).put(tag, value);
+    return copy;
+  }
+
+  @Test void aCallbackWithAUrlFailsWhenItCannotLogOnOrIsNotToldWhereTo() throws Exception {
+    start(request -> ProtocolExchangeResult.noMatch(), Map.of());
+    ObjectNode callback = (ObjectNode) mapper.readTree(
+        "{\"senderCompId\":\"FMOCK\",\"targetCompId\":\"VENUE\",\"msgType\":\"R\",\"timeoutMs\":500}");
+    int free;
+    try (ServerSocket probe = new ServerSocket(0)) {
+      free = probe.getLocalPort();
+    }
+    ExecutionException nobody = assertThrows(ExecutionException.class, () -> acceptor.send(
+        callback.deepCopy().put("url", "fix://127.0.0.1:" + free), null, null).toCompletableFuture()
+        .get(5, TimeUnit.SECONDS));
+    assertTrue(nobody.getCause().getMessage().startsWith("Not logged on to fix://127.0.0.1:" + free + " within 500 ms"),
+        nobody.getCause().getMessage());
+
+    // A server that refuses the Logon says why.
+    try (ServerSocket server = new ServerSocket(0)) {
+      server.setSoTimeout(12000);
+      CompletableFuture<Long> refused = acceptor.send(callback.deepCopy()
+          .put("url", "fix://127.0.0.1:" + server.getLocalPort()).put("timeoutMs", 5000), null, null)
+          .toCompletableFuture();
+      Client venue = new Client(FIX42, "VENUE", "FMOCK", server.accept());
+      clients.add(venue);
+      assertEquals("A", venue.receive().msgType());
+      venue.send("5", "58", "Unknown CompID FMOCK");
+      ExecutionException why = assertThrows(ExecutionException.class, () -> refused.get(5, TimeUnit.SECONDS));
+      assertTrue(why.getCause().getMessage().contains("Unknown CompID FMOCK"), why.getCause().getMessage());
+    }
+
+    // What it needs to connect is checked first.
+    Map<String, ObjectNode> invalid = new LinkedHashMap<>();
+    invalid.put("A FIX target must be fix://host:port", callback.deepCopy().put("url", "tcp://127.0.0.1:1"));
+    invalid.put("A FIX callback with 'url' needs 'targetCompId', the server's CompID",
+        callback.deepCopy().put("url", "fix://127.0.0.1:1").put("targetCompId", ""));
+    ObjectNode noSender = callback.deepCopy().put("url", "fix://127.0.0.1:1");
+    noSender.remove("senderCompId");
+    invalid.put("A FIX callback with 'url' needs 'senderCompId', or a sender-comp-id on the endpoint", noSender);
+    for (Map.Entry<String, ObjectNode> entry : invalid.entrySet()) {
+      ExecutionException refusedFirst = assertThrows(ExecutionException.class,
+          () -> acceptor.send(entry.getValue(), null, null).toCompletableFuture().get(5, TimeUnit.SECONDS));
+      assertEquals(entry.getKey(), refusedFirst.getCause().getMessage());
+    }
+  }
+
+  @Test void aCallbackFailsWhenItsRepliesDoNotComeInTimeOrTheSessionLogsOut() throws Exception {
+    start(request -> ProtocolExchangeResult.noMatch(), Map.of("reject-unmatched", false));
+    Client first = connect("CLIENT1", "FMOCK");
+    Client second = connect("CLIENT2", "FMOCK");
+    first.logon(30);
+    second.logon(30);
+    ObjectNode ask = (ObjectNode) mapper.readTree(
+        "{\"msgType\":\"R\",\"tags\":{\"131\":\"QR-1\"},\"awaitReplies\":\"1\",\"timeoutMs\":300}");
+
+    // Sent to every session, each of which must reply; without a pattern any message is a reply.
+    CompletableFuture<Long> broadcast = acceptor.send(ask, null, null).toCompletableFuture();
+    first.receive();
+    second.receive();
+    first.send("S", "131", "QR-1");
+    ExecutionException late = assertThrows(ExecutionException.class, () -> broadcast.get(5, TimeUnit.SECONDS));
+    assertInstanceOf(TimeoutException.class, late.getCause());
+    assertEquals("Received 0 of 1 reply from CLIENT2 -> FMOCK within 300 ms", late.getCause().getMessage());
+    assertTrue(requests.isEmpty());
+
+    CompletableFuture<Long> waiting = acceptor.send(
+        ask.deepCopy().put("targetCompId", "CLIENT1").put("timeoutMs", 5000), null, null).toCompletableFuture();
+    first.receive();
+    first.send("5");
+    ExecutionException gone = assertThrows(ExecutionException.class, () -> waiting.get(5, TimeUnit.SECONDS));
+    assertEquals("The FIX session CLIENT1 -> FMOCK logged out; received 0 of 1 reply from CLIENT1 -> FMOCK",
+        gone.getCause().getMessage());
+
+    ExecutionException invalid = assertThrows(ExecutionException.class,
+        () -> acceptor.send(ask.deepCopy().put("replyPattern", "("), null, null).toCompletableFuture()
+            .get(5, TimeUnit.SECONDS));
+    assertTrue(invalid.getCause().getMessage().startsWith("FIX callback 'replyPattern' is not a valid regular"),
+        invalid.getCause().getMessage());
   }
 
   @Test void probesASilentClientAndDisconnectsItWhenTheProbeIsUnanswered() throws Exception {

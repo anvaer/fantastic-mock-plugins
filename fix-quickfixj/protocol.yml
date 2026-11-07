@@ -61,7 +61,7 @@ template:
     fields:
       targetCompId:
         label: Target CompID
-        description: CompID of the client that receives the message; empty sends it to every logged-on session
+        description: "Without a server URL: CompID of the client logged on here that receives the message; empty sends it to every logged-on session. With one: the server's CompID"
       msgType:
         label: "MsgType (35)"
       tags:
@@ -72,3 +72,43 @@ template:
         label: Raw fields
         type: text
         description: "tag=value pairs separated by | or line breaks; use it for repeating groups"
+      # With a url the callback is a FIX client: it sends over the session with that server and its
+      # CompIDs, logging on first when there is none.
+      url:
+        label: Server URL
+        type: string
+        group: Connect as client
+        description: "fix://host:port of a FIX server: the callback sends over the session this side has with it under the same CompIDs, and logs on as a client first when there is none. Empty sends to the clients logged on to this endpoint"
+      senderCompId:
+        label: Sender CompID
+        type: string
+        group: Connect as client
+        description: This side's CompID in the session with the server; empty uses the endpoint's sender-comp-id
+      logonTags:
+        label: Logon tags
+        type: map
+        group: Connect as client
+        description: "More fields of the Logon (35=A) by tag number, such as 553 Username and 554 Password; 108 sets HeartBtInt (30 by default). Used by the callback that logs on"
+      keepSessionMs:
+        label: Keep session (ms)
+        type: integer
+        default: 30000
+        group: Connect as client
+        description: How long a session no callback is using stays logged on for the next callback with the same server and CompIDs; 0 logs out as soon as the last callback is over
+      # A reply is an application message a session sends back while the callback waits: it
+      # goes to the callback, not to the templates. Each default is what the plugin uses when a
+      # template leaves the field out; the editor shows it in the empty field.
+      awaitReplies:
+        label: Replies to wait for
+        type: integer
+        default: 0
+        description: Replies each session the message went to must send before the callback is over; with a reply pattern, only messages it matches count. 0 waits for none
+      replyPattern:
+        label: Reply pattern
+        type: string
+        description: "Regular expression found in a reply's text, with | between fields, such as \\|35=S\\|; set alone, the callback waits for one such reply. From clients logged on here, other messages go to the templates as usual"
+      timeoutMs:
+        label: Reply timeout (ms)
+        type: integer
+        default: 10000
+        description: Longest wait for the replies, counted from when the message was sent, and with a server URL also for the Logon; fewer replies by then fail the callback

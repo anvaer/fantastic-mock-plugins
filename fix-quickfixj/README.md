@@ -121,7 +121,14 @@ the raw message; Tags shows the first value of each tag.
 | `msgType` | MsgType (35) of the message to send |
 | `tags` | Tag number to value; a tag with an empty value is left out |
 | `body` | `tag=value` pairs separated by `\|` or line breaks |
-| `targetCompId` | Callbacks only: the client that receives the message; empty for every session |
+| `targetCompId` | Callbacks only: the client that receives the message; empty for every session. With `url`: the server's CompID |
+| `url` | Callbacks only: `fix://host:port` of a FIX server the callback logs on to as a client; empty sends to the clients logged on here |
+| `senderCompId` | Callbacks with `url` only: this side's CompID; empty uses the endpoint's `sender-comp-id` |
+| `logonTags` | Callbacks with `url` only: more Logon fields by tag number, such as `553` Username and `554` Password; `108` sets HeartBtInt (default `30`) |
+| `keepSessionMs` | Callbacks with `url` only: how long a session no callback is using stays logged on for the next one with the same server and CompIDs; default `30000`, `0` logs out after the last callback |
+| `awaitReplies` | Callbacks only: replies each session the message went to must send before the callback is over; `0` (default) waits for none |
+| `replyPattern` | Callbacks only: regular expression a reply's text must contain, with `\|` between fields; set alone, the callback waits for one such reply |
+| `timeoutMs` | Callbacks only: longest wait for the replies, from when the message was sent; default `10000` |
 
 ```json
 "response": {
@@ -154,6 +161,77 @@ use it, for example an HTTP template that pushes a fill:
 `endpoint` selects the instance and `targetCompId` the client by its CompID; with an empty
 `targetCompId` the message goes to every logged-on session. The callback fails when no
 session received it.
+
+A callback can also wait for the clients' replies, for example a QuoteRequest that waits for
+the Quote:
+
+```json
+{
+  "transport": "fix-quickfixj",
+  "endpoint": "fixqfj42-demo",
+  "targetCompId": "CLIENT1",
+  "msgType": "R",
+  "tags": { "131": "{{quoteReqId}}", "55": "IBM" },
+  "replyPattern": "\\|35=S\\|",
+  "timeoutMs": 5000
+}
+```
+
+A reply is an application message that a session sends while the callback waits. It belongs
+to the callback, not to the templates, so it is neither answered nor rejected. With
+`replyPattern`, only a message whose text (with `|` between fields) contains a match is a
+reply; other messages go to the templates as usual. Without it, every application message of
+the session is a reply. `awaitReplies` counts per session: sent to every session, the callback
+waits for each of them. It fails when the replies have not come within `timeoutMs`, or when a
+session logs out first; a synchronous callback (`async: false`) holds the answer to its own
+request until then.
+
+With FantasticMock 1.0.6 or later, Traffic logs show each message the callback sent and each
+reply as an entry of its own.
+
+With a `url`, the callback is a FIX client instead. It sends over the session this side has
+with that server under the same CompIDs (`senderCompId`, `targetCompId`), and logs on first when
+there is none; a session no callback has used for `keepSessionMs` (30 s by default) logs out.
+Callbacks with the same CompIDs share one session, as a real client's orders do, so a busy
+template costs one Logon, not one per request. For example, a QuoteRequest to a venue that wants
+a username and password:
+
+```json
+{
+  "transport": "fix-quickfixj",
+  "endpoint": "fixqfj42-demo",
+  "url": "fix://venue.test:9880",
+  "senderCompId": "FMOCK",
+  "targetCompId": "VENUE",
+  "logonTags": { "553": "{{username}}", "554": "{{password}}" },
+  "msgType": "R",
+  "tags": { "131": "{{quoteReqId}}", "55": "IBM" },
+  "replyPattern": "\\|35=S\\|"
+}
+```
+
+- `endpoint` gives the version (`begin-string`), the data dictionary and, when `senderCompId`
+  is left out, the CompID (`sender-comp-id`).
+- Each Logon sets ResetSeqNumFlag (`141=Y`), so a new session starts its numbers at 1; within
+  a session they go on. The server must accept such a Logon. `logonTags` are those of the
+  callback that logged on.
+- A message from the server goes to the callback it answers: the one whose request ID it
+  repeats (ClOrdID 11, OrigClOrdID 41, OrderID 37, QuoteReqID 131, QuoteID 117, MDReqID 262
+  and the like), the one a Reject's RefSeqNum (45) names, or else the latest callback still
+  waiting. So give each callback its own ID, such as `"11": "ORD-{{seq}}"`; callbacks with the
+  same one in a session cannot be told apart. `replyPattern` then says which of a callback's
+  messages count. A message that comes while no callback waits is not logged, nor are Logon,
+  Heartbeat and Logout.
+- `timeoutMs` is also the longest wait for the Logon. A callback fails when the session cannot
+  log on, when the server refuses the Logon (with the server's reason), or when the server ends
+  the session before its replies came; the next callback logs on again.
+- A different `senderCompId` per request (`"CALLBACK{{seq}}"`) means a new session and Logon
+  per request, on this side and on the server's. QuickFIX/J sets up every connection on one
+  thread, so that soon limits how many callbacks per second get through; a fixed CompID or a
+  few of them do not have that limit.
+- The Logon is not logged, so `logonTags` such as a password stay out of Traffic logs. A host
+  before 1.0.6 logs the callback as it was rendered, `logonTags` included.
+- With **Connection messages in one entry** on, each such callback is listed as one entry.
 
 Good to know:
 
@@ -227,7 +305,8 @@ counters `messages`, `rejected`, `unmatched`, `failures`, `logons`, `refusedLogo
 ## Limits
 
 - FIX 4.2 and 4.4 only, one version per instance. FIX 5.0 (FIXT.1.1) is not supported.
-- An acceptor to its clients: no template logs on to another server.
+- An acceptor to its clients. Only a callback with a `url` logs on to another server, in a
+  session kept for the callbacks with its CompIDs until it is unused for `keepSessionMs`.
 - Plain TCP: no TLS.
 - Sequence numbers and sent messages are kept in memory and are lost when the instance
   stops or reloads.
@@ -241,6 +320,11 @@ Bind beyond loopback only in an isolated test environment.
 - `QuickFixProtocolPlugin`: entry point; creates the acceptor for an endpoint.
 - `QuickFixAcceptor`: the QuickFIX/J settings and engine lifecycle, session creation, health
   details and the callback sender.
+- `CallbackReplies`: callbacks that wait for replies, which take those replies from their
+  sessions before templates see them.
+- `CallbackClient`: callbacks with a `url`. One QuickFIX/J `SocketInitiator` per server and
+  CompIDs, shared by their callbacks and stopped once unused for `keepSessionMs`; it hands
+  each message from the server to the callback it answers.
 - `QuickFixApplication`: the engine's callbacks: logon checks, application messages to
   `ProtocolEndpoint.handle`, and a `ProtocolResponseDelivery` per logged-on session.
 - `QuickFixMessages`: rendered documents to QuickFIX/J messages, and received messages to

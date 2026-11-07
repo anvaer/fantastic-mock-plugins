@@ -83,7 +83,7 @@ final class QuickFixUpstream implements Application, AutoCloseable {
   private static final int NEXT_EXPECTED_MSG_SEQ_NUM = 789;
   // Request IDs that an answer repeats: ClOrdID, OrigClOrdID, OrderID, QuoteReqID, QuoteID,
   // MDReqID, SecurityReqID, TradeRequestID, PosReqID, UserRequestID, RFQReqID, CollInquiryID, ListID.
-  private static final Set<Integer> REQUEST_IDS = Set.of(11, 41, 37, 131, 117, 262, 320, 568, 710, 923, 644, 909, 66);
+  static final Set<Integer> REQUEST_IDS = Set.of(11, 41, 37, 131, 117, 262, 320, 568, 710, 923, 644, 909, 66);
   private static final int REMEMBERED = 4096;
   /** The request fields an upstream's rules may change: the tags of a message, and its whole text. */
   static final String TAG = "tag";

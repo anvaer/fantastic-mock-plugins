@@ -142,8 +142,9 @@ Add this object to a template's `callbacks` array:
   "endpoint": "grpc-demo",
   "url": "grpc://127.0.0.1:9092",
   "method": "demo.Greeter/SayHello",
+  "descriptorFile": "protocol-plugins/grpc/examples/hello.protoset",
   "headers": { "x-callback": "fantasticmock" },
-  "body": { "name": "{{name}}" },
+  "body": "{\"name\":\"{{name}}\"}",
   "timeoutMs": 5000,
   "delayMs": 100,
   "async": true
@@ -154,15 +155,22 @@ Add this object to a template's `callbacks` array:
 server. Use `grpc://host:port` for plaintext or `grpcs://host:port` for TLS with
 the JVM's default trust configuration. The URL requires an explicit port and no
 method path; `method` is the full service/method name (an initial `/` is accepted).
-The local instance's descriptor set must include that method and its message
-types. `body` accepts an object or protobuf JSON string. Unknown protobuf fields
-are rejected. `headers` accepts scalar values or arrays for repeated metadata;
+The method and its message types come from the instance's descriptor set
+(`descriptor-file`), or from `descriptorFile` when the callback names one: any
+`protoc --include_imports` descriptor set, so a callback can call a service the
+instance does not serve. It is read once, and again when the file changes; a
+relative path is read from the working directory. `body` is the request as
+protobuf JSON text: a template stores a callback's `body` as a string, so an
+object there fails the template. Unknown protobuf fields are rejected. `headers` accepts scalar values or arrays for repeated metadata;
 binary keys ending in `-bin` require base64 values.
 
 Core renders variables, applies callback matchers and delays, and dispatches each
 callback. The plugin sends one unary RPC and completes the callback only after
 one response and an `OK` status. Remote errors and deadline failures propagate
-to core; the reply body is discarded. The callback completes with the encoded
+to core. With FantasticMock 1.0.6 or later, Traffic logs show the request and the
+reply as entries of their own (the reply with its status, metadata, trailers and
+body, as a template writes a response); an earlier host logs the callback once, as
+rendered, and not the reply. The callback completes with the encoded
 request payload size after success. `timeoutMs` must be a positive integer and
 defaults to 5000, including connection setup. Channels are reused per target, as
 gRPC intends, instead of paying a TCP, HTTP/2 and TLS handshake per callback; the

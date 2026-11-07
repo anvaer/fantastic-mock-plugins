@@ -344,6 +344,65 @@ class GrpcPluginTest {
     assertTrue(received.await(3, TimeUnit.SECONDS));
   }
 
+  @Test void callbackReportsItsRequestAndTheReplyForTheLog() throws Exception {
+    var response = result("{\"headers\":{\"x-mock\":\"yes\"},\"body\":{\"message\":\"Hello Ada\"}}", 0);
+    start(message -> response, Map.of());
+    List<JsonNode> sent = new CopyOnWriteArrayList<>();
+    List<JsonNode> received = new CopyOnWriteArrayList<>();
+    var document = callback();
+    document.putObject("headers").put("x-client", "test");
+    long size = runtime.send(document, (message, bytes) -> sent.add(message), (message, bytes) -> received.add(message))
+        .toCompletableFuture().get(3, TimeUnit.SECONDS);
+    assertEquals((long) request.getSerializedSize(), size);
+    // The request as a received call's fields are logged.
+    assertEquals(1, sent.size());
+    assertEquals("demo.Greeter/SayHello", sent.get(0).path("method").asText());
+    assertEquals("demo.Greeter", sent.get(0).path("service").asText());
+    assertEquals("test", sent.get(0).path("header").path("x-client").asText());
+    assertEquals("Ada", mapper.readTree(sent.get(0).path("body").asText()).path("name").asText());
+    // The reply as a template writes a response.
+    assertEquals(1, received.size());
+    assertEquals("OK", received.get(0).path("status").asText());
+    assertEquals("yes", received.get(0).path("headers").path("x-mock").asText());
+    assertEquals("Hello Ada", received.get(0).path("body").path("message").asText());
+  }
+
+  @Test void callbackCallsAMethodOfTheDescriptorSetItNames() throws Exception {
+    var response = result("{\"body\":{\"message\":\"Hello Ada\"}}", 0);
+    start(message -> response, Map.of());
+    // Another server with a service this instance's descriptor set does not have.
+    var other = DescriptorProtos.FileDescriptorSet.parseFrom(Files.readAllBytes(Path.of("examples/hello.protoset"))).toBuilder();
+    other.getFileBuilder(0).setName("other.proto").getServiceBuilder(0).setName("Other").getMethodBuilder(0).setName("Ping");
+    Path otherFile = temp.resolve("other.protoset");
+    Files.write(otherFile, other.build().toByteArray());
+    var server = (GrpcRuntime) plugin.createInstance(kit.endpoint("other",
+        Map.of("host", "127.0.0.1", "port", 0, "descriptor-file", otherFile.toString())));
+    server.start();
+    try {
+      var document = mapper.createObjectNode().put("url", "grpc://127.0.0.1:" + server.port())
+          .put("method", "demo.Other/Ping").put("body", "{\"name\":\"Ada\"}");
+      var unknown = assertThrows(ExecutionException.class,
+          () -> runtime.send(document).toCompletableFuture().get(3, TimeUnit.SECONDS));
+      assertTrue(unknown.getCause().getMessage().contains("set descriptorFile"), unknown.getCause().getMessage());
+
+      document.put("descriptorFile", otherFile.toString());
+      List<JsonNode> sent = new CopyOnWriteArrayList<>();
+      List<JsonNode> received = new CopyOnWriteArrayList<>();
+      runtime.send(document, (message, bytes) -> sent.add(message), (message, bytes) -> received.add(message))
+          .toCompletableFuture().get(3, TimeUnit.SECONDS);
+      assertEquals("demo.Other/Ping", sent.get(0).path("method").asText());
+      assertEquals("Hello Ada", received.get(0).path("body").path("message").asText());
+
+      document.put("descriptorFile", temp.resolve("missing.protoset").toString());
+      var missing = assertThrows(ExecutionException.class,
+          () -> runtime.send(document).toCompletableFuture().get(3, TimeUnit.SECONDS));
+      assertTrue(missing.getCause().getMessage().contains("descriptorFile"), missing.getCause().getMessage());
+      assertTrue(missing.getCause().getMessage().contains("no such file"), missing.getCause().getMessage());
+    } finally {
+      server.close();
+    }
+  }
+
   @Test void callbackPropagatesRemoteError() throws Exception {
     var response = result("{\"status\":\"PERMISSION_DENIED\",\"description\":\"denied\"}", 0);
     start(message -> response, Map.of());
@@ -926,7 +985,7 @@ class GrpcPluginTest {
     var definition = plugin.definition();
     // Server streams send a response sequence; a unary call takes the first response.
     assertFalse(definition.template().singleResponse());
-    assertEquals(Set.of("url", "method", "headers", "body", "timeoutMs"), definition.template().callback().keySet());
+    assertEquals(Set.of("url", "method", "descriptorFile", "headers", "body", "timeoutMs"), definition.template().callback().keySet());
     assertTrue(definition.message().request().get("method").routing());
     assertTrue(definition.message().request().get("service").routing());
     assertEquals(List.of("request.method", "request.service"), definition.routing().fields());

@@ -39,13 +39,16 @@ final class QuickFixApplication implements Application {
   private final ProtocolEndpoint endpoint;
   private final QuickFixAcceptor acceptor;
   private final QuickFixUpstream upstream;
+  private final CallbackReplies replies;
   // One per logged-on session: closing it on logout cancels the session's delayed responses.
   private final Map<SessionID, ProtocolResponseDelivery> deliveries = new ConcurrentHashMap<>();
 
-  QuickFixApplication(ProtocolEndpoint endpoint, QuickFixAcceptor acceptor, QuickFixUpstream upstream) {
+  QuickFixApplication(ProtocolEndpoint endpoint, QuickFixAcceptor acceptor, QuickFixUpstream upstream,
+      CallbackReplies replies) {
     this.endpoint = endpoint;
     this.acceptor = acceptor;
     this.upstream = upstream;
+    this.replies = replies;
   }
 
   @Override
@@ -69,6 +72,7 @@ final class QuickFixApplication implements Application {
   public void onLogout(SessionID sessionId) {
     ProtocolResponseDelivery delivery = deliveries.remove(sessionId);
     if (delivery != null) delivery.close();
+    replies.loggedOut(sessionId);
     upstream.left(sessionId);
     // A session this side logged out, because the real server ended its own, takes the client back.
     Session session = Session.lookupSession(sessionId);
@@ -100,6 +104,8 @@ final class QuickFixApplication implements Application {
     Session session = Session.lookupSession(sessionId);
     ProtocolResponseDelivery delivery = deliveries.get(sessionId);
     if (session == null || delivery == null) return;
+    // A reply a callback waits for is the callback's, not a request for the templates.
+    if (replies.take(sessionId, message)) return;
 
     CompletableFuture<ProtocolExchangeResult> exchange = endpoint.handle(
         new QuickFixMessageView(endpoint, message, sessionId, session.getDataDictionary()), delivery);

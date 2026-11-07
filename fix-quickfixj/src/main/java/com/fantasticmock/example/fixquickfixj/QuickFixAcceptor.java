@@ -19,6 +19,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 import org.apache.mina.core.service.IoAcceptor;
 import quickfix.Acceptor;
 import quickfix.ConfigError;
@@ -55,8 +56,12 @@ final class QuickFixAcceptor
   private final boolean disconnectIdle;
   private final boolean validate;
   private final boolean persistMessages;
+  private static final BiConsumer<JsonNode, Long> IGNORED = (message, size) -> { };
+
   private final QuickFixApplication application;
   private final QuickFixUpstream upstream;
+  private final CallbackReplies replies;
+  private final CallbackClient callbackClient;
   private final Map<SessionID, Session> sessions = new ConcurrentHashMap<>();
   private volatile SessionFactory factory;
   private volatile Engine acceptor;
@@ -73,7 +78,17 @@ final class QuickFixAcceptor
     this.validate = settings.bool("validate");
     this.persistMessages = settings.bool("persist-messages");
     this.upstream = new QuickFixUpstream(endpoint, this);
-    this.application = new QuickFixApplication(endpoint, this, upstream);
+    this.replies = new CallbackReplies(endpoint.scheduler());
+    this.callbackClient = new CallbackClient(endpoint.scheduler(), beginString, compId, this::upstreamSettings,
+        () -> {
+          try {
+            return dictionary();
+          } catch (ConfigError unreadable) {
+            throw new IllegalStateException("The FIX data dictionary cannot be read: " + unreadable.getMessage(),
+                unreadable);
+          }
+        });
+    this.application = new QuickFixApplication(endpoint, this, upstream, replies);
   }
 
   boolean rejectUnmatched() { return rejectUnmatched; }
@@ -165,35 +180,64 @@ final class QuickFixAcceptor
    */
   @Override
   public CompletionStage<Long> send(JsonNode callback) {
-    CompletableFuture<Long> done = new CompletableFuture<>();
+    return send(callback, null, null);
+  }
+
+  /**
+   * Sends a callback as {@link #send(JsonNode)} does and reports each message it wrote to
+   * {@code sent}, one per session, with the fields of a received message. When it waits
+   * for replies ({@code awaitReplies}, {@code replyPattern}, {@code timeoutMs}), each reply is
+   * reported to {@code received}, and the stage completes once every session it went to sent
+   * them; it fails when they did not come in time or the session logged out first. A callback
+   * with a {@code url} logs on to that server as a client instead ({@link CallbackClient}).
+   * Declared without {@code @Override}: hosts before 1.0.6 call {@link #send(JsonNode)} only.
+   */
+  public CompletionStage<Long> send(JsonNode callback, BiConsumer<JsonNode, Long> sent,
+      BiConsumer<JsonNode, Long> received) {
+    if (callback != null && !callback.path("url").asText("").isBlank()) {
+      return callbackClient.send(callback, sent, received);
+    }
+    CallbackReplies.Call call = null;
     try {
+      CallbackReplies.Wait wait = CallbackReplies.Wait.of(callback);
       String target = callback.path("targetCompId").asText("").trim();
-      long bytes = 0;
-      int recipients = 0;
-      IOException failure = null;
+      Map<SessionID, String> recipients = new LinkedHashMap<>();
       for (Session session : sessions.values()) {
-        if (!session.isLoggedOn()
-            || (!target.isEmpty() && !target.equals(session.getSessionID().getTargetCompID()))) {
-          continue;
+        SessionID id = session.getSessionID();
+        if (session.isLoggedOn() && (target.isEmpty() || target.equals(id.getTargetCompID()))) {
+          recipients.put(id, describe(id));
         }
+      }
+      // Waiting from before the message goes, so no reply can come first.
+      if (wait.waits()) call = replies.start(wait, recipients, received == null ? IGNORED : received);
+      long bytes = 0;
+      int delivered = 0;
+      IOException failure = null;
+      for (Map.Entry<SessionID, String> recipient : recipients.entrySet()) {
         try {
-          bytes += send(session, callback).length();
-          recipients++;
+          SentText text = send(sessions.get(recipient.getKey()), callback);
+          bytes += text.length();
+          delivered++;
+          if (sent != null) sent.accept(CallbackReplies.reported(text.toString()), (long) text.length());
         } catch (IOException failed) {
           failure = failed;
+          if (call != null) call.drop(recipient.getKey());
         }
       }
-      if (recipients > 0) {
-        done.complete(bytes);
-      } else {
-        done.completeExceptionally(failure != null ? failure : new IllegalStateException(target.isEmpty()
+      if (delivered == 0) {
+        Exception nobody = failure != null ? failure : new IllegalStateException(target.isEmpty()
             ? "No FIX session is logged on"
-            : "No FIX session is logged on for CompID " + target));
+            : "No FIX session is logged on for CompID " + target);
+        if (call != null) call.finish(nobody);
+        return CompletableFuture.failedFuture(nobody);
       }
+      if (call == null) return CompletableFuture.completedFuture(bytes);
+      call.sent(bytes);
+      return call.completion;
     } catch (RuntimeException failure) {
-      done.completeExceptionally(failure);
+      if (call != null) call.finish(failure);
+      return CompletableFuture.failedFuture(failure);
     }
-    return done;
   }
 
   /**
@@ -293,6 +337,8 @@ final class QuickFixAcceptor
     Engine engine = acceptor;
     if (engine == null) return;
     acceptor = null;
+    replies.close("The FIX endpoint is stopping");
+    callbackClient.close();
     for (Session session : sessions.values()) {
       if (!session.isLoggedOn()) continue;
       try {

@@ -72,7 +72,7 @@ final class GrpcRuntime implements ProtocolPluginInstance, ProtocolOutboundSende
     services.values().forEach(service -> builder.addService(service.build()));
     server = builder.build();
     server.start();
-    callbacks = new GrpcCallbackClient(schema, settings);
+    callbacks = new GrpcCallbackClient(schema, endpoint.objectMapper(), settings);
     upstream = new GrpcUpstream(schema, endpoint.objectMapper(), settings.integer("max-message-bytes"));
   }
 
@@ -108,6 +108,18 @@ final class GrpcRuntime implements ProtocolPluginInstance, ProtocolOutboundSende
     var client = callbacks;
     return client == null ? CompletableFuture.failedFuture(
         new IllegalStateException("gRPC instance is not started")) : client.send(callback);
+  }
+
+  /**
+   * Sends a callback as {@link #send(JsonNode)} does, and reports its request to {@code sent}
+   * and the reply to {@code received}, so that the traffic log shows both. Declared without
+   * {@code @Override}: hosts before 1.0.6 call {@link #send(JsonNode)} only.
+   */
+  public CompletionStage<Long> send(JsonNode callback, java.util.function.BiConsumer<JsonNode, Long> sent,
+      java.util.function.BiConsumer<JsonNode, Long> received) {
+    var client = callbacks;
+    return client == null ? CompletableFuture.failedFuture(
+        new IllegalStateException("gRPC instance is not started")) : client.send(callback, sent, received);
   }
 
   @Override
