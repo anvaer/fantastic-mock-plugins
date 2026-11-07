@@ -3,7 +3,7 @@ provider: com.fantasticmock.example.grpc.GrpcProtocolPlugin
 descriptor:
   id: grpc
   displayName: gRPC
-  version: 1.5.0
+  version: 1.6.0
   capabilities: [CONNECTION_ORIENTED]
 runtime:
   settings:

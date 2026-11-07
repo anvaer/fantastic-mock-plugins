@@ -9,8 +9,8 @@ like any HTTP template, with variables, delays, callbacks, traffic logs and metr
 | --- | --- | --- | --- |
 | [http-netty](http-netty/README.md) 1.2.0 | HTTP/1.1 on an extra, faster port for load tests; serves your existing HTTP templates | its own port (example: 9083) | Netty |
 | [websocket-jakarta](websocket-jakarta/README.md) 1.1.0 | WebSocket services: answers, sequences, loops until an event, callbacks | Fantastic Mock's own port (`ws://localhost:8080/events`) | none |
-| [grpc](grpc/README.md) 1.5.0 | gRPC unary and server-streaming methods, from your `.proto` files, no generated code | its own port (example: 9091) | gRPC, protobuf |
-| [fix-quickfixj](fix-quickfixj/README.md) 1.4.0 | A FIX 4.2 and 4.4 counterparty: logon, sequence numbers, resends, execution reports | its own port per FIX version (example: 9886, 9887) | QuickFIX/J, Apache MINA |
+| [grpc](grpc/README.md) 1.6.0 | gRPC unary and server-streaming methods, from your `.proto` files, no generated code | its own port (example: 9091) | gRPC, protobuf |
+| [fix-quickfixj](fix-quickfixj/README.md) 1.5.0 | A FIX 4.2 and 4.4 counterparty: logon, sequence numbers, resends, execution reports | its own port per FIX version (example: 9886, 9887) | QuickFIX/J, Apache MINA |
 
 **Requirements:** Fantastic Mock 1.0.5 or later and Java 21. A JRE is enough for the
 ready-made plugins; building them needs a JDK. fix-quickfixj needs a copy of 1.0.5
@@ -20,7 +20,7 @@ endpoint need Fantastic Mock 1.0.6 or later; the plugin runs on 1.0.5 without th
 
 ## Install
 
-1. **Get the plugin.** Download its zip, such as `grpc-1.5.0.zip`, from this repository's
+1. **Get the plugin.** Download its zip, such as `grpc-1.6.0.zip`, from this repository's
    **Releases** page, or [build it](#build-from-source).
 
 2. **Unzip it into `protocol-plugins/`.** Fantastic Mock looks for plugins in a folder called
@@ -34,7 +34,7 @@ endpoint need Fantastic Mock 1.0.6 or later; the plugin runs on 1.0.5 without th
      mock-templates/
      protocol-plugins/
        grpc/
-         fantasticmock-grpc-1.5.0.jar
+         fantasticmock-grpc-1.6.0.jar
          grpc-api-1.83.1.jar
          ...                          (the plugin's libraries)
          examples/
